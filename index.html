@@ -6,19 +6,31 @@
   <style>
     /* ==== BASIC LAYOUT ==== */
     body {
-      background: #262626;
+      background: linear-gradient(#1e293b, #000);
       color: #fff;
-      font-family: sans-serif;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
       text-align: center;
       margin: 0;
       padding: 0;
     }
     #ui {
       padding: 16px;
-      background: #222;
-      box-shadow: 0 2px 8px #0006;
+      background: #111b22ee;
+      box-shadow: 0 2px 8px #000a;
       z-index: 2;
       position: relative;
+    }
+    #hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      gap: 16px;
+      background: #0008;
+      padding: 8px 12px;
+      border-radius: 8px;
+      box-shadow: 0 0 8px #0008;
+      font-size: 18px;
     }
     #gameCanvas {
       background: #333;
@@ -39,18 +51,24 @@
       cursor: pointer;
       transition: 0.1s;
     }
+    #startBtn {
+      font-size: 18px;
+      padding: 10px 24px;
+      box-shadow: 0 0 8px #0008;
+    }
     button:hover {
       background: #21867a;
     }
   </style>
 </head>
 <body>
-  <!-- ==== UI: Display Money, HP, Controls ==== -->
+  <!-- ==== UI & HUD ==== -->
   <div id="ui">
-    <span>💰 Money: <span id="money">100</span></span>
-    &nbsp;|&nbsp;
-    <span>❤️ HP: <span id="hp">10</span></span>
-    &nbsp;|&nbsp;
+    <div id="hud">
+      <div>Wave <span id="wave">1</span></div>
+      <div>💰 <span id="money">100</span></div>
+      <div>❤️ <span id="hp">10</span></div>
+    </div>
     <button onclick="startWave()" id="startBtn">Start Wave</button>
     <span id="gameStatus"></span>
   </div>
@@ -82,6 +100,7 @@
     let isPlacingTower = false;
     let gameOver = false;
     let waveActive = false;
+    let waveNumber = 1;
     let frameCount = 0;
 
     // ==== MAP LAYOUT (1 = path, 0 = empty/buildable) ====
@@ -121,6 +140,7 @@
       projectiles = [];
       gameOver = false;
       waveActive = false;
+      waveNumber = 1;
       frameCount = 0;
       document.getElementById("gameStatus").textContent = "";
       updateUI();
@@ -149,7 +169,7 @@
       waveActive = true;
       waveSpawnIndex = 0;
       waveSpawnDelay = 0;
-      document.getElementById("gameStatus").textContent = "Wave in progress!";
+      document.getElementById("gameStatus").textContent = `Wave ${waveNumber} in progress!`;
     }
 
     function handleEnemies() {
@@ -195,8 +215,9 @@
       // Wave finished?
       if (waveSpawnIndex === 10 && enemies.length === 0) {
         waveActive = false;
-        document.getElementById("gameStatus").textContent = "Wave cleared! Click Start Wave for next round.";
+        document.getElementById("gameStatus").textContent = `Wave ${waveNumber} cleared! Click Start Wave for next round.`;
         money += 25;
+        waveNumber++;
         updateUI();
       }
     }
@@ -339,6 +360,7 @@
     function updateUI() {
       document.getElementById("money").textContent = money;
       document.getElementById("hp").textContent = hp;
+      document.getElementById("wave").textContent = waveNumber;
     }
 
     // ==== GAME OVER ====
