@@ -278,13 +278,27 @@ class Enemy{
 }
 
 class Bullet{
-  constructor(x,y,dx,dy,speed,dmg,splash,color){ this.x=x; this.y=y; this.dx=dx; this.dy=dy; this.speed=speed; this.dmg=dmg; this.splash=splash||0; this.color=color||'#ff0'; this.dead=false; this.life=4000; }
+  constructor(x,y,target,speed,dmg,splash,color){
+    this.x=x; this.y=y; this.target=target;
+    this.speed=speed; this.dmg=dmg;
+    this.splash=splash||0; this.color=color||'#ff0';
+    this.dead=false; this.life=4000;
+  }
   update(dt){
     if(this.dead) return;
-    this.life-=dt; if(this.life<=0){this.dead=true;return;}
-    const travel=this.speed*dt/1000;
-    this.x+=this.dx*travel; this.y+=this.dy*travel;
-    for(const e of game.enemies){ if(e.dead) continue; if(dist(this.x,this.y,e.x,e.y)<6){ applyDamage(e,this.dmg,this.splash,this.x,this.y); this.dead=true; break; } }
+    this.life -= dt;
+    if(this.life<=0){ this.dead=true; return; }
+    if(!this.target || this.target.dead){ this.dead=true; return; }
+    const d = dist(this.x,this.y,this.target.x,this.target.y) || 1;
+    const travel = this.speed*dt/1000;
+    const dx = (this.target.x - this.x)/d;
+    const dy = (this.target.y - this.y)/d;
+    this.x += dx*travel;
+    this.y += dy*travel;
+    if(dist(this.x,this.y,this.target.x,this.target.y) < 6){
+      applyDamage(this.target,this.dmg,this.splash,this.x,this.y);
+      this.dead=true;
+    }
   }
   draw(){ if(this.dead) return; ctx.fillStyle=this.color; ctx.fillRect(this.x-2,this.y-2,4,4); }
 }
@@ -293,7 +307,10 @@ class Bullet{
    GAME LOGIC: Damage, Spawners, Waves
    ===================================================================== */
 function applyDamage(target,dmg,splash,ix,iy){ target.takeDamage(dmg); if(splash>0){ for(const e of game.enemies){ if(e===target||e.dead) continue; if(dist(ix,iy,e.x,e.y)<=splash){e.takeDamage(dmg);} } } }
-function spawnBullet(tower,target){ const s=tower.stats; const d=dist(tower.x,tower.y,target.x,target.y)||1; const dx=(target.x-tower.x)/d; const dy=(target.y-tower.y)/d; game.bullets.push(new Bullet(tower.x,tower.y,dx,dy,s.bulletSpeed,s.dmg,s.splash,s.color)); }
+function spawnBullet(tower,target){
+  const s=tower.stats;
+  game.bullets.push(new Bullet(tower.x, tower.y, target, s.bulletSpeed, s.dmg, s.splash, s.color));
+}
 function buildWave(n){
   const jobs=[]; let t=0;
   const baseCount = 4 + n; // Gradual enemy count
