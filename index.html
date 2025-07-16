@@ -155,12 +155,17 @@ const TOWER_TYPES = {
   basic:  {label:'Basic',  cost:50,  range:96,  fireRate:600, dmg:1,  bulletSpeed:220, color:'#0f0', barrel:'#9f9'},
   rapid:  {label:'Rapid',  cost:80,  range:80,  fireRate:220, dmg:1,  bulletSpeed:300, color:'#0ff', barrel:'#aff'},
   long:   {label:'Long',   cost:100, range:160, fireRate:900, dmg:2,  bulletSpeed:260, color:'#6f6', barrel:'#cfc'},
-  splash: {label:'Splash', cost:120, range:110, fireRate:1200,dmg:1,  bulletSpeed:200, splash:48, color:'#ff0', barrel:'#ffc'}
+  splash: {label:'Splash', cost:120, range:110, fireRate:1200,dmg:1,  bulletSpeed:200, splash:48, color:'#ff0', barrel:'#ffc'},
+  frost:  {label:'Frost',  cost:90,  range:80,  fireRate:1000,dmg:1,  bulletSpeed:180, color:'#4af', barrel:'#aaf', slow:{power:0.5,duration:1500}},
+  amplifier:{label:'Amp',   cost:150, range:80,  color:'#f80', buff:{type:'dmg',power:1.25}},
+  bank:   {label:'Bank',   cost:200, range:0,   color:'#fc0', income:8, incomeRate:4000}
 };
 const ENEMY_TYPES = {
   grunt:  {label:'Grunt',  maxHp:10,  speed:40,  reward:5,  color:'#f00'},
   runner: {label:'Runner', maxHp:6,   speed:70,  reward:6,  color:'#fa0'},
-  tank:   {label:'Tank',   maxHp:25,  speed:25,  reward:12, color:'#f0f'}
+  tank:   {label:'Tank',   maxHp:25,  speed:25,  reward:12, color:'#f0f'},
+  mini_grunt:{label:'Mini', maxHp:4,  speed:45,  reward:1,  color:'#f88'},
+  splitter:{label:'Splitter',maxHp:15, speed:35, reward:10, color:'#c55'}
 };
 const TARGETING_MODES = ['first', 'last', 'strongest', 'weakest'];
 
@@ -214,11 +219,46 @@ function drawPath(){
    CLASSES: Tower, Enemy, Bullet
    ===================================================================== */
 class Tower{
-  constructor(x,y,typeKey){ this.x=x; this.y=y; this.type=typeKey; this.level=1; this.cooldown=0; this.angle=0; this.targetingMode = 'first'; }
-  get stats(){ const base=TOWER_TYPES[this.type]; const lvl=this.level; const scale=(v,p)=>v*(1+p*(lvl-1)); return { range: scale(base.range,0.10), fireRate: base.fireRate * Math.pow(0.95,lvl-1), dmg: Math.round(scale(base.dmg,0.15)), bulletSpeed: scale(base.bulletSpeed,0.05), splash: base.splash?scale(base.splash,0.10):0, color: base.color, barrel: base.barrel||'#fff' }; }
+  constructor(x,y,typeKey){ this.x=x; this.y=y; this.type=typeKey; this.level=1; this.cooldown=0; this.angle=0; this.targetingMode = 'first'; this.incomeClock=0; }
+  get stats(){
+    const base=TOWER_TYPES[this.type];
+    const lvl=this.level;
+    const scale=(v,p)=>v*(1+p*(lvl-1));
+    const s={
+      range: scale(base.range||0,0.10),
+      fireRate: base.fireRate? base.fireRate*Math.pow(0.95,lvl-1) : 0,
+      dmg: base.dmg? Math.round(scale(base.dmg,0.15)) : 0,
+      bulletSpeed: base.bulletSpeed? scale(base.bulletSpeed,0.05) : 0,
+      splash: base.splash? scale(base.splash,0.10) : 0,
+      color: base.color,
+      barrel: base.barrel||'#fff'
+    };
+    if(base.slow) s.slow = base.slow;
+    if(base.buff) s.buff = base.buff;
+    if(base.income) { s.income = base.income; s.incomeRate = base.incomeRate; }
+    for(const amp of game.towers){
+      if(amp.type==='amplifier' && amp!==this){
+        const def=TOWER_TYPES['amplifier'];
+        const r=def.range*(1+0.10*(amp.level-1));
+        if(dist(this.x,this.y,amp.x,amp.y)<=r){
+          if(def.buff.type==='dmg' && s.dmg){ s.dmg*=def.buff.power; }
+        }
+      }
+    }
+    return s;
+  }
   update(dt){
     this.cooldown -= dt;
     const s = this.stats;
+    if(this.type==='bank'){
+      this.incomeClock += dt;
+      if(this.incomeClock >= s.incomeRate){
+        game.cash += s.income;
+        this.incomeClock -= s.incomeRate;
+      }
+      return;
+    }
+    if(this.type==='amplifier') return;
     const targets = game.enemies.filter(e => !e.dead && dist(this.x, this.y, e.x, e.y) <= s.range);
     if (targets.length === 0) return;
     switch (this.targetingMode) {
@@ -228,7 +268,7 @@ class Tower{
       default: targets.sort((a, b) => b.distanceTraveled - a.distanceTraveled); break;
     }
     const target = targets[0];
-    if(target){ this.angle = Math.atan2(target.y-this.y, target.x-this.x); if(this.cooldown <= 0){ spawnBullet(this, target); this.cooldown = this.stats.fireRate; } }
+    if(target){ this.angle = Math.atan2(target.y-this.y, target.x-this.x); if(this.cooldown <= 0){ spawnBullet(this, target); this.cooldown = s.fireRate; } }
   }
   // UPDATED: Draws tower with a base and outline for depth
   draw(isSelected=false){
@@ -240,25 +280,69 @@ class Tower{
     ctx.fillStyle=s.color;
     ctx.beginPath(); ctx.arc(this.x,this.y,TILE/2,0,Math.PI*2); ctx.fill();
     ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
-    // Barrel
-    const bl = TILE/2;
-    ctx.strokeStyle=s.barrel; ctx.lineWidth=4;
-    ctx.beginPath(); ctx.moveTo(this.x,this.y); ctx.lineTo(this.x+Math.cos(this.angle)*bl, this.y+Math.sin(this.angle)*bl); ctx.stroke();
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+    if(this.type==='amplifier'){
+      const pulse=(Math.sin(performance.now()/400)+1)/2;
+      const aura=s.range*(0.9+0.1*pulse);
+      ctx.fillStyle='rgba(255,128,0,0.25)';
+      ctx.beginPath(); ctx.arc(this.x,this.y,aura,0,Math.PI*2); ctx.fill();
+    }else if(this.type==='bank'){
+      ctx.fillStyle='#000';
+      ctx.font='16px monospace';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.fillText('$',this.x,this.y+1);
+    }else{
+      const bl = TILE/2;
+      ctx.strokeStyle=s.barrel; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.moveTo(this.x,this.y); ctx.lineTo(this.x+Math.cos(this.angle)*bl, this.y+Math.sin(this.angle)*bl); ctx.stroke();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+    }
     // Selection Ring
     if(isSelected){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(this.x,this.y,s.range,0,Math.PI*2); ctx.stroke(); }
   }
 }
 
 class Enemy{
-  constructor(typeKey, hpScale=1){ const def=ENEMY_TYPES[typeKey]; this.type=typeKey; this.maxHp = Math.round(def.maxHp * hpScale); this.hp = this.maxHp; this.speed = def.speed; this.reward= def.reward; this.color = def.color; this.x=PATH[0].x+TILE/2; this.y=PATH[0].y+TILE/2; this.pathIndex=0; this.dead=false; this.distanceTraveled = 0; }
-  takeDamage(dmg){ this.hp -= dmg; if(this.hp<=0){ this.dead=true; game.cash += this.reward; } }
+  constructor(typeKey, hpScale=1){
+    const def=ENEMY_TYPES[typeKey];
+    this.type=typeKey;
+    this.maxHp = Math.round(def.maxHp * hpScale);
+    this.hp = this.maxHp;
+    this.speed = def.speed;
+    this.reward= def.reward;
+    this.color = def.color;
+    this.x=PATH[0].x+TILE/2;
+    this.y=PATH[0].y+TILE/2;
+    this.pathIndex=0;
+    this.dead=false;
+    this.distanceTraveled = 0;
+    this.slowUntil=0;
+    this.speedMultiplier=1;
+  }
+  takeDamage(dmg){
+    this.hp -= dmg;
+    if(this.hp<=0){
+      this.dead=true;
+      game.cash += this.reward;
+      if(this.type==='splitter'){
+        for(let i=0;i<2;i++){
+          const mini=new Enemy('mini_grunt');
+          mini.x=this.x+(Math.random()*8-4);
+          mini.y=this.y+(Math.random()*8-4);
+          mini.pathIndex=this.pathIndex;
+          mini.distanceTraveled=this.distanceTraveled;
+          game.enemies.push(mini);
+        }
+      }
+    }
+  }
   update(dt){
     if(this.dead) return;
     const next=PATH[this.pathIndex+1]; if(!next){return;}
     const tx=next.x+TILE/2, ty=next.y+TILE/2;
     const d=dist(this.x,this.y,tx,ty);
-    const travel=this.speed*dt/1000;
+    if(performance.now()>this.slowUntil) this.speedMultiplier=1;
+    const travel=(this.speed*this.speedMultiplier)*dt/1000;
     this.distanceTraveled += travel;
     if(travel>=d){ this.x=tx; this.y=ty; this.pathIndex++; if(!PATH[this.pathIndex+1]){ this.dead=true; game.lives--; } }
     else{ this.x += ((tx-this.x)/d)*travel; this.y += ((ty-this.y)/d)*travel; }
@@ -270,6 +354,10 @@ class Enemy{
     ctx.fillStyle=this.color;
     ctx.beginPath(); ctx.arc(this.x,this.y,r,0,Math.PI*2); ctx.fill();
     ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
+    if(this.speedMultiplier<1){
+      ctx.fillStyle='rgba(173,216,255,0.4)';
+      ctx.beginPath(); ctx.arc(this.x,this.y,r+4,0,Math.PI*2); ctx.fill();
+    }
     // HP bar
     ctx.fillStyle='#0f0';
     const w=(this.hp/this.maxHp)*(TILE*2/3);
@@ -278,10 +366,11 @@ class Enemy{
 }
 
 class Bullet{
-  constructor(x,y,target,speed,dmg,splash,color){
+  constructor(x,y,target,speed,dmg,splash,color,slow){
     this.x=x; this.y=y; this.target=target;
     this.speed=speed; this.dmg=dmg;
     this.splash=splash||0; this.color=color||'#ff0';
+    this.slow = slow;
     this.dead=false; this.life=4000;
   }
   update(dt){
@@ -296,7 +385,7 @@ class Bullet{
     this.x += dx*travel;
     this.y += dy*travel;
     if(dist(this.x,this.y,this.target.x,this.target.y) < 6){
-      applyDamage(this.target,this.dmg,this.splash,this.x,this.y);
+      applyDamage(this.target,this.dmg,this.splash,this.x,this.y,this.slow);
       this.dead=true;
     }
   }
@@ -306,10 +395,22 @@ class Bullet{
 /* =====================================================================
    GAME LOGIC: Damage, Spawners, Waves
    ===================================================================== */
-function applyDamage(target,dmg,splash,ix,iy){ target.takeDamage(dmg); if(splash>0){ for(const e of game.enemies){ if(e===target||e.dead) continue; if(dist(ix,iy,e.x,e.y)<=splash){e.takeDamage(dmg);} } } }
+function applyDamage(target,dmg,splash,ix,iy,slow){
+  target.takeDamage(dmg);
+  if(slow){
+    target.speedMultiplier = slow.power;
+    target.slowUntil = performance.now() + slow.duration;
+  }
+  if(splash>0){
+    for(const e of game.enemies){
+      if(e===target||e.dead) continue;
+      if(dist(ix,iy,e.x,e.y)<=splash){ e.takeDamage(dmg); }
+    }
+  }
+}
 function spawnBullet(tower,target){
   const s=tower.stats;
-  game.bullets.push(new Bullet(tower.x, tower.y, target, s.bulletSpeed, s.dmg, s.splash, s.color));
+  game.bullets.push(new Bullet(tower.x, tower.y, target, s.bulletSpeed, s.dmg, s.splash, s.color, s.slow));
 }
 function buildWave(n){
   const jobs=[]; let t=0;
@@ -319,6 +420,7 @@ function buildWave(n){
   const hpScale = 0.04 * Math.pow(1.5, n - 1);
   for(let i=0;i<baseCount;i++){ jobs.push({time:t,type:'grunt',hpScale}); t+=600; }
   if(n>=2){ for(let i=0;i<Math.floor(baseCount/3);i++){ jobs.push({time:300+i*900,type:'runner',hpScale:hpScale*0.8}); } }
+  if(n>=4){ for(let i=0;i<Math.floor(baseCount/4);i++){ jobs.push({time:200+i*800,type:'splitter',hpScale:hpScale*1.2}); } }
   if(n%5===0 && n>0){ for(let i=0;i<Math.ceil(n/5);i++){ jobs.push({time: t + i*1200,type:'tank',hpScale:hpScale*1.5}); } }
   jobs.sort((a,b)=>a.time-b.time);
   return jobs;
