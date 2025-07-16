@@ -152,20 +152,23 @@ const PATH = [ {x:0,y:6*TILE}, {x:14*TILE,y:6*TILE}, {x:14*TILE,y:12*TILE}, {x:1
    DATA TABLES – TOWERS & ENEMIES
    ===================================================================== */
 const TOWER_TYPES = {
-  basic:  {label:'Basic',  cost:50,  range:96,  fireRate:600, dmg:1,  bulletSpeed:220, color:'#0f0', barrel:'#9f9'},
-  rapid:  {label:'Rapid',  cost:80,  range:80,  fireRate:220, dmg:1,  bulletSpeed:300, color:'#0ff', barrel:'#aff'},
-  long:   {label:'Long',   cost:100, range:160, fireRate:900, dmg:2,  bulletSpeed:260, color:'#6f6', barrel:'#cfc'},
-  splash: {label:'Splash', cost:120, range:110, fireRate:1200,dmg:1,  bulletSpeed:200, splash:48, color:'#ff0', barrel:'#ffc'},
-  frost:  {label:'Frost',  cost:90,  range:80,  fireRate:1000,dmg:1,  bulletSpeed:180, color:'#4af', barrel:'#aaf', slow:{power:0.5,duration:1500}},
-  amplifier:{label:'Amp',   cost:150, range:80,  color:'#f80', buff:{type:'dmg',power:1.25}},
-  bank:   {label:'Bank',   cost:200, range:0,   color:'#fc0', income:8, incomeRate:4000}
+  basic:  {label:'Basic',  cost:50,  range:96,  fireRate:600, dmg:1,  bulletSpeed:220, color:'#0f0', barrel:'#9f9', canTarget:['ground']},
+  rapid:  {label:'Rapid',  cost:80,  range:80,  fireRate:220, dmg:1,  bulletSpeed:300, color:'#0ff', barrel:'#aff', canTarget:['ground']},
+  long:   {label:'Long',   cost:100, range:160, fireRate:900, dmg:2,  bulletSpeed:260, color:'#6f6', barrel:'#cfc', canTarget:['ground']},
+  splash: {label:'Splash', cost:120, range:110, fireRate:1200,dmg:1,  bulletSpeed:200, splash:48, color:'#ff0', barrel:'#ffc', canTarget:['ground']},
+  frost:  {label:'Frost',  cost:90,  range:80,  fireRate:1000,dmg:1,  bulletSpeed:180, color:'#4af', barrel:'#aaf', slow:{power:0.5,duration:1500}, canTarget:['ground']},
+  amplifier:{label:'Amp',   cost:150, range:80,  color:'#f80', buff:{type:'dmg',power:1.25}, canTarget:['ground']},
+  bank:   {label:'Bank',   cost:200, range:0,   color:'#fc0', income:8, incomeRate:4000, canTarget:['ground']},
+  missile:{label:'Missile',cost:110, range:140, fireRate:1500,dmg:5,  bulletSpeed:250, color:'#f44', barrel:'#f99', canTarget:['air']}
 };
 const ENEMY_TYPES = {
   grunt:  {label:'Grunt',  maxHp:10,  speed:40,  reward:5,  color:'#f00'},
   runner: {label:'Runner', maxHp:6,   speed:70,  reward:6,  color:'#fa0'},
   tank:   {label:'Tank',   maxHp:25,  speed:25,  reward:12, color:'#f0f'},
   mini_grunt:{label:'Mini', maxHp:4,  speed:45,  reward:1,  color:'#f88'},
-  splitter:{label:'Splitter',maxHp:15, speed:35, reward:10, color:'#c55'}
+  splitter:{label:'Splitter',maxHp:15, speed:35, reward:10, color:'#c55'},
+  wasp:   {label:'Wasp',   maxHp:8,  speed:55,  reward:8,  color:'#ff5', movement:'air'},
+  golem:  {label:'Golem',  maxHp:200, speed:20, reward:100,color:'#779', aura:{type:'disable',range:72}}
 };
 const TARGETING_MODES = ['first', 'last', 'strongest', 'weakest'];
 
@@ -219,7 +222,11 @@ function drawPath(){
    CLASSES: Tower, Enemy, Bullet
    ===================================================================== */
 class Tower{
-  constructor(x,y,typeKey){ this.x=x; this.y=y; this.type=typeKey; this.level=1; this.cooldown=0; this.angle=0; this.targetingMode = 'first'; this.incomeClock=0; }
+  constructor(x,y,typeKey){
+    this.x=x; this.y=y; this.type=typeKey; this.level=1;
+    this.cooldown=0; this.angle=0; this.targetingMode = 'first';
+    this.incomeClock=0; this.disabledUntil=0;
+  }
   get stats(){
     const base=TOWER_TYPES[this.type];
     const lvl=this.level;
@@ -231,7 +238,8 @@ class Tower{
       bulletSpeed: base.bulletSpeed? scale(base.bulletSpeed,0.05) : 0,
       splash: base.splash? scale(base.splash,0.10) : 0,
       color: base.color,
-      barrel: base.barrel||'#fff'
+      barrel: base.barrel||'#fff',
+      canTarget: base.canTarget||['ground']
     };
     if(base.slow) s.slow = base.slow;
     if(base.buff) s.buff = base.buff;
@@ -248,6 +256,7 @@ class Tower{
     return s;
   }
   update(dt){
+    if(performance.now() < this.disabledUntil) return;
     this.cooldown -= dt;
     const s = this.stats;
     if(this.type==='bank'){
@@ -259,7 +268,7 @@ class Tower{
       return;
     }
     if(this.type==='amplifier') return;
-    const targets = game.enemies.filter(e => !e.dead && dist(this.x, this.y, e.x, e.y) <= s.range);
+    const targets = game.enemies.filter(e => !e.dead && s.canTarget.includes(e.movement) && dist(this.x, this.y, e.x, e.y) <= s.range);
     if (targets.length === 0) return;
     switch (this.targetingMode) {
       case 'last': targets.sort((a, b) => a.distanceTraveled - b.distanceTraveled); break;
@@ -277,7 +286,7 @@ class Tower{
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.arc(this.x,this.y,TILE/2+2,0,Math.PI*2); ctx.fill();
     // Body
-    ctx.fillStyle=s.color;
+    ctx.fillStyle = performance.now() < this.disabledUntil ? '#666' : s.color;
     ctx.beginPath(); ctx.arc(this.x,this.y,TILE/2,0,Math.PI*2); ctx.fill();
     ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
     if(this.type==='amplifier'){
@@ -311,6 +320,7 @@ class Enemy{
     this.speed = def.speed;
     this.reward= def.reward;
     this.color = def.color;
+    this.movement = def.movement || 'ground';
     this.x=PATH[0].x+TILE/2;
     this.y=PATH[0].y+TILE/2;
     this.pathIndex=0;
@@ -338,6 +348,17 @@ class Enemy{
   }
   update(dt){
     if(this.dead) return;
+    if(this.movement==='air'){
+      const end=PATH[PATH.length-1];
+      const tx=end.x+TILE/2, ty=end.y+TILE/2;
+      const d=dist(this.x,this.y,tx,ty);
+      if(performance.now()>this.slowUntil) this.speedMultiplier=1;
+      const travel=(this.speed*this.speedMultiplier)*dt/1000;
+      this.distanceTraveled += travel;
+      if(travel>=d){ this.x=tx; this.y=ty; this.dead=true; game.lives--; }
+      else{ this.x+=((tx-this.x)/d)*travel; this.y+=((ty-this.y)/d)*travel; }
+      return;
+    }
     const next=PATH[this.pathIndex+1]; if(!next){return;}
     const tx=next.x+TILE/2, ty=next.y+TILE/2;
     const d=dist(this.x,this.y,tx,ty);
@@ -351,6 +372,12 @@ class Enemy{
   draw(){
     if(this.dead) return;
     const r=TILE/3;
+    if(this.movement==='air'){
+      ctx.fillStyle='rgba(0,0,0,0.4)';
+      ctx.beginPath();
+      ctx.ellipse(this.x,this.y+r*0.6,r, r*0.4,0,0,Math.PI*2);
+      ctx.fill();
+    }
     ctx.fillStyle=this.color;
     ctx.beginPath(); ctx.arc(this.x,this.y,r,0,Math.PI*2); ctx.fill();
     ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
@@ -412,14 +439,35 @@ function spawnBullet(tower,target){
   const s=tower.stats;
   game.bullets.push(new Bullet(tower.x, tower.y, target, s.bulletSpeed, s.dmg, s.splash, s.color, s.slow));
 }
+
+function updateAuras(dt){
+  const now = performance.now();
+  for(const enemy of game.enemies){
+    if(enemy.dead) continue;
+    const def = ENEMY_TYPES[enemy.type];
+    if(def.aura && def.aura.type==='disable'){
+      const range = def.aura.range;
+      for(const tower of game.towers){
+        if(dist(enemy.x,enemy.y,tower.x,tower.y)<=range){
+          tower.disabledUntil = Math.max(tower.disabledUntil, now + 200);
+        }
+      }
+    }
+  }
+}
 function buildWave(n){
   const jobs=[]; let t=0;
   const baseCount = 4 + n; // Gradual enemy count
   // Start waves with 4% base HP and grow roughly 50% each level
   // This yields a softer difficulty curve for early waves
   const hpScale = 0.04 * Math.pow(1.5, n - 1);
+  if(n>0 && n % 10 === 0){
+    jobs.push({time:0,type:'golem',hpScale:hpScale*10});
+    return jobs;
+  }
   for(let i=0;i<baseCount;i++){ jobs.push({time:t,type:'grunt',hpScale}); t+=600; }
   if(n>=2){ for(let i=0;i<Math.floor(baseCount/3);i++){ jobs.push({time:300+i*900,type:'runner',hpScale:hpScale*0.8}); } }
+  if(n>=3){ for(let i=0;i<Math.floor(baseCount/4);i++){ jobs.push({time:150+i*800,type:'wasp',hpScale:hpScale*0.9}); } }
   if(n>=4){ for(let i=0;i<Math.floor(baseCount/4);i++){ jobs.push({time:200+i*800,type:'splitter',hpScale:hpScale*1.2}); } }
   if(n%5===0 && n>0){ for(let i=0;i<Math.ceil(n/5);i++){ jobs.push({time: t + i*1200,type:'tank',hpScale:hpScale*1.5}); } }
   jobs.sort((a,b)=>a.time-b.time);
@@ -467,7 +515,17 @@ function resetGame(){ Object.assign(game, { cash: 100, lives: 10, wave: 0, tower
 function onGameOver(){ game.running=false; if(game.wave>game.bestWave){game.bestWave=game.wave;localStorage.setItem('td_bestWave',game.wave);} if(game.cash>game.bestCash){game.bestCash=game.cash;localStorage.setItem('td_bestCash',game.cash);} updateHUD(); showOverlay('Game Over',`You survived wave ${game.wave}!`,false); }
 function updateHUD(){ cashEl.textContent = `💰 ${fmt(game.cash)}`; livesEl.textContent= `❤️ ${fmt(game.lives)}`; waveEl.textContent = `🌊 ${fmt(game.wave)}`; bestEl.textContent = `🏆 Best ${fmt(game.bestWave)}/${fmt(game.bestCash)}`; }
 function loop(ts){ const dt = clamp(ts - game.lastTimestamp, 0, 50); game.lastTimestamp=ts; if(game.running && !game.paused){ update(dt); } draw(); if(game.running || game.paused){requestAnimationFrame(loop);} }
-function update(dt){ for(const t of game.towers) t.update(dt); for(const e of game.enemies) e.update(dt); for(const b of game.bullets) b.update(dt); updateSpawner(dt); game.enemies = game.enemies.filter(e=>!e.dead); game.bullets = game.bullets.filter(b=>!b.dead); if(game.lives<=0 && game.running){onGameOver();} updateHUD(); }
+function update(dt){
+  for(const t of game.towers) t.update(dt);
+  for(const e of game.enemies) e.update(dt);
+  for(const b of game.bullets) b.update(dt);
+  updateAuras(dt);
+  updateSpawner(dt);
+  game.enemies = game.enemies.filter(e=>!e.dead);
+  game.bullets = game.bullets.filter(b=>!b.dead);
+  if(game.lives<=0 && game.running){onGameOver();}
+  updateHUD();
+}
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawBackground(); // Draw the new background first
