@@ -87,6 +87,11 @@
   #overlay h1{margin:0;font-size:32px;}
   #overlay p{margin:0 0 12px 0;font-size:16px;}
 
+  #startScreen{position:fixed;inset:0;display:flex;justify-content:center;align-items:center;background:rgba(0,0,0,0.8);flex-direction:column;gap:12px;z-index:30;}
+  #mapButtons button{margin:4px;}
+
+  #hud, #game{display:none;}
+
   #towerPanel{
     position:fixed;
     bottom:10px;
@@ -138,6 +143,12 @@
   <button id="overlayRestart">Restart</button>
 </div>
 
+<!-- ===== Start Screen for Map Selection ===== -->
+<div id="startScreen">
+  <h1>Select a Map</h1>
+  <div id="mapButtons"></div>
+</div>
+
 <script>
 /* =====================================================================
    CONFIG – GAME SIZE, GRID, PATH
@@ -146,7 +157,12 @@ const canvas = document.getElementById('game');
 const ctx    = canvas.getContext('2d');
 const TILE   = 32;
 
-const PATH = [ {x:0,y:6*TILE}, {x:14*TILE,y:6*TILE}, {x:14*TILE,y:12*TILE}, {x:19*TILE,y:12*TILE} ];
+const MAPS = [
+  {name:'Classic', path:[ {x:0,y:6*TILE}, {x:14*TILE,y:6*TILE}, {x:14*TILE,y:12*TILE}, {x:19*TILE,y:12*TILE} ]},
+  {name:'Serpentine', path:[ {x:0,y:4*TILE}, {x:5*TILE,y:4*TILE}, {x:5*TILE,y:10*TILE}, {x:12*TILE,y:10*TILE}, {x:12*TILE,y:2*TILE}, {x:19*TILE,y:2*TILE} ]}
+];
+
+let PATH, PATH_TILES, PATH_TILE_SET;
 
 /* =====================================================================
    DATA TABLES – TOWERS & ENEMIES
@@ -175,13 +191,12 @@ const TARGETING_MODES = ['first', 'last', 'strongest', 'weakest'];
 /* =====================================================================
    GAME STATE & UTILS
    ===================================================================== */
-const game = { cash: 100, lives: 10, wave: 0, bestWave: 0, bestCash: 0, towers: [], enemies: [], bullets: [], selectedTower: null, placingType: 'basic', placingGhost: {x:0,y:0,valid:false,visible:false}, paused: false, running: true, waveActive: false, lastTimestamp: performance.now(), spawnQueue: [], spawnClock: 0 };
+const game = { cash: 100, lives: 10, wave: 0, bestWave: 0, bestCash: 0, towers: [], enemies: [], bullets: [], selectedTower: null, placingType: 'basic', placingGhost: {x:0,y:0,valid:false,visible:false}, paused: false, running: true, waveActive: false, lastTimestamp: performance.now(), spawnQueue: [], spawnClock: 0, currentMapIndex: 0 };
 (function loadBest(){ const bw = +localStorage.getItem('td_bestWave'); const bc = +localStorage.getItem('td_bestCash'); if(!isNaN(bw)) game.bestWave = bw; if(!isNaN(bc)) game.bestCash = bc; })();
 const dist = (ax,ay,bx,by)=>Math.hypot(ax-bx, ay-by);
 const clamp=(v,min,max)=>v<min?min:(v>max?max:v);
 function buildPathTiles(){ const tiles=[]; for(let i=0;i<PATH.length-1;i++){ const a=PATH[i], b=PATH[i+1]; const dx = Math.sign(b.x-a.x), dy = Math.sign(b.y-a.y); const steps = Math.abs((dx? (b.x-a.x) : (b.y-a.y)) / TILE); for(let s=0;s<=steps;s++){ tiles.push({gx:(a.x/TILE)+dx*s, gy:(a.y/TILE)+dy*s}); } } return tiles; }
-const PATH_TILES = buildPathTiles();
-const PATH_TILE_SET = new Set(PATH_TILES.map(t=>`${t.gx},${t.gy}`));
+
 function snapToTile(px,py){ const gx = Math.floor(px / TILE); const gy = Math.floor(py / TILE); return {gx, gy, x: gx*TILE + TILE/2, y: gy*TILE + TILE/2}; }
 function isTileBuildable(gx,gy){ return !PATH_TILE_SET.has(`${gx},${gy}`); }
 function fmt(n){return Math.floor(n);}
@@ -484,7 +499,7 @@ function updateSpawner(dt){
 /* =====================================================================
    UI & INPUT HANDLERS
    ===================================================================== */
-const cashEl=document.getElementById('cash'), livesEl=document.getElementById('lives'), waveEl=document.getElementById('wave'), bestEl=document.getElementById('best'), spawnBtn=document.getElementById('spawnBtn'), pauseBtn=document.getElementById('pauseBtn'), towerButtonsEl = document.getElementById('towerButtons'), towerPanelEl=document.getElementById('towerPanel'), towerPanelTitle=document.getElementById('towerPanelTitle'), towerPanelStats=document.getElementById('towerPanelStats'), towerPanelTargetingEl=document.getElementById('towerPanelTargeting'), upgradeBtn=document.getElementById('upgradeBtn'), sellBtn=document.getElementById('sellBtn'), overlayEl=document.getElementById('overlay'), overlayTitle=document.getElementById('overlayTitle'), overlayMsg=document.getElementById('overlayMsg'), overlayResume=document.getElementById('overlayResume'), overlayRestart=document.getElementById('overlayRestart');
+const cashEl=document.getElementById('cash'), livesEl=document.getElementById('lives'), waveEl=document.getElementById('wave'), bestEl=document.getElementById('best'), spawnBtn=document.getElementById('spawnBtn'), pauseBtn=document.getElementById('pauseBtn'), towerButtonsEl=document.getElementById('towerButtons'), towerPanelEl=document.getElementById('towerPanel'), towerPanelTitle=document.getElementById('towerPanelTitle'), towerPanelStats=document.getElementById('towerPanelStats'), towerPanelTargetingEl=document.getElementById('towerPanelTargeting'), upgradeBtn=document.getElementById('upgradeBtn'), sellBtn=document.getElementById('sellBtn'), overlayEl=document.getElementById('overlay'), overlayTitle=document.getElementById('overlayTitle'), overlayMsg=document.getElementById('overlayMsg'), overlayResume=document.getElementById('overlayResume'), overlayRestart=document.getElementById('overlayRestart'), startScreenEl=document.getElementById('startScreen'), mapButtons=document.getElementById('mapButtons'), hud=document.getElementById('hud');
 spawnBtn.addEventListener('click', startWave);
 pauseBtn.addEventListener('click', ()=>togglePause(true));
 window.addEventListener('keydown',e=>{ if(e.code==='Space' || e.key==='p' || e.key==='P'){ e.preventDefault(); togglePause(true); } });
@@ -504,14 +519,46 @@ function upgradeTower(t,cost){ if(game.cash < cost) return; game.cash-=cost; t.l
 function sellTower(t,value){ const i=game.towers.indexOf(t); if(i>=0) game.towers.splice(i,1); game.cash+=value; refreshTowerButtonStates(); updateHUD(); deselectTower(); }
 window.addEventListener('click',e=>{ if(e.target.closest('#towerPanel')||e.target.closest('canvas')) return; if(game.selectedTower) deselectTower(); });
 overlayResume.addEventListener('click',()=>{if(game.running){togglePause(false);}else{hideOverlay();}});
-overlayRestart.addEventListener('click',()=>{hideOverlay();resetGame();});
+overlayRestart.addEventListener('click',()=>{hideOverlay();showStartScreen();});
 function showOverlay(title,msg,showResume){ overlayTitle.textContent=title; overlayMsg.textContent=msg; overlayResume.style.display=showResume?'inline-block':'none'; overlayEl.style.display='flex'; }
 function hideOverlay(){overlayEl.style.display='none';}
+
+function showStartScreen(){
+  startScreenEl.style.display='flex';
+  canvas.style.display='none';
+  hud.style.display='none';
+  mapButtons.innerHTML='';
+  MAPS.forEach((m,i)=>{
+    const b=document.createElement('button');
+    b.textContent=m.name;
+    b.addEventListener('click',()=>initializeGame(i));
+    mapButtons.appendChild(b);
+  });
+}
+
+function initializeGame(idx){
+  startScreenEl.style.display='none';
+  canvas.style.display='block';
+  hud.style.display='flex';
+  game.currentMapIndex=idx;
+  PATH=MAPS[idx].path;
+  PATH_TILES=buildPathTiles();
+  PATH_TILE_SET=new Set(PATH_TILES.map(t=>`${t.gx},${t.gy}`));
+  resetGame();
+  requestAnimationFrame(loop);
+}
 
 /* =====================================================================
    GAME LIFECYCLE: Reset, Game Over, Loop
    ===================================================================== */
-function resetGame(){ Object.assign(game, { cash: 100, lives: 10, wave: 0, towers: [], enemies: [], bullets: [], running: true, paused: false, waveActive: false, spawnQueue: [], spawnClock: 0, selectedTower: null, placingType: 'basic', placingGhost: {visible:false} }); pauseBtn.textContent='Pause'; spawnBtn.disabled=false; refreshTowerButtonStates(); updateHUD(); hideOverlay(); requestAnimationFrame(loop); }
+function resetGame(){
+  Object.assign(game, { cash: 100, lives: 10, wave: 0, towers: [], enemies: [], bullets: [], running: true, paused: false, waveActive: false, spawnQueue: [], spawnClock: 0, selectedTower: null, placingType: 'basic', placingGhost: {visible:false} });
+  pauseBtn.textContent='Pause';
+  spawnBtn.disabled=false;
+  refreshTowerButtonStates();
+  updateHUD();
+  hideOverlay();
+}
 function onGameOver(){ game.running=false; if(game.wave>game.bestWave){game.bestWave=game.wave;localStorage.setItem('td_bestWave',game.wave);} if(game.cash>game.bestCash){game.bestCash=game.cash;localStorage.setItem('td_bestCash',game.cash);} updateHUD(); showOverlay('Game Over',`You survived wave ${game.wave}!`,false); }
 function updateHUD(){ cashEl.textContent = `💰 ${fmt(game.cash)}`; livesEl.textContent= `❤️ ${fmt(game.lives)}`; waveEl.textContent = `🌊 ${fmt(game.wave)}`; bestEl.textContent = `🏆 Best ${fmt(game.bestWave)}/${fmt(game.bestCash)}`; }
 function loop(ts){ const dt = clamp(ts - game.lastTimestamp, 0, 50); game.lastTimestamp=ts; if(game.running && !game.paused){ update(dt); } draw(); if(game.running || game.paused){requestAnimationFrame(loop);} }
@@ -541,7 +588,7 @@ function draw(){
    ===================================================================== */
 buildTowerButtons();
 updateHUD();
-requestAnimationFrame(loop);
+showStartScreen();
 
 </script>
 </body>
