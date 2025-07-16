@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <title>Tower Defense v2 – Single File Build</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
 <!--
 ============================================================
 Tower Defense v2 – Upgraded Single-File Teaching Build
@@ -32,23 +35,72 @@ Have fun hacking! – Dev Mento
 -->
 <style>
   /* ==== PAGE & BASE ==== */
-  html,body{margin:0;height:100%;background:#111;color:#eee;font-family:sans-serif;display:flex;justify-content:center;align-items:center;}
+  html,body{margin:0;height:100%;background:#111;color:#eee;font-family:'Roboto Mono', monospace;display:flex;justify-content:center;align-items:center;}
   #game{background:#222;border:2px solid #555;border-radius:8px;cursor:crosshair;touch-action:none;image-rendering:pixelated;}
-  #hud{position:fixed;top:8px;left:8px;font-size:14px;display:flex;gap:8px;align-items:center;z-index:10;}
+  #hud{
+    position:fixed;
+    top:10px;
+    left:10px;
+    background:rgba(0,0,0,0.5);
+    padding:8px 12px;
+    border-radius:8px;
+    border:1px solid #444;
+    display:flex;
+    gap:16px;
+    align-items:center;
+    z-index:10;
+    font-size:16px;
+  }
   #hud span{min-width:60px;display:inline-block;}
   #towerButtons{display:inline-flex;gap:4px;}
-  #towerButtons button{padding:2px 6px;font-size:12px;line-height:1;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;}
-  #towerButtons button.selected{outline:2px solid #fff;}
-  #towerButtons button.disabled{opacity:.4;cursor:not-allowed;}
-  #spawnBtn,#pauseBtn,#restartBtn{padding:2px 8px;font-size:12px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;}
-  #spawnBtn:disabled{opacity:.4;cursor:not-allowed;}
+  button{
+    padding:4px 10px;
+    font-size:14px;
+    border-radius:5px;
+    border:1px solid #666;
+    background:linear-gradient(to bottom,#444,#222);
+    color:#eee;
+    cursor:pointer;
+    transition:all 0.2s ease;
+    box-shadow:0 2px 5px rgba(0,0,0,0.2);
+  }
+  button:hover:not(:disabled){
+    background:linear-gradient(to bottom,#555,#333);
+    border-color:#888;
+    transform:translateY(-1px);
+    box-shadow:0 3px 7px rgba(0,0,0,0.3);
+  }
+  button:disabled,
+  button.disabled{
+    opacity:0.4;
+    cursor:not-allowed;
+    transform:none;
+    box-shadow:none;
+  }
+  #towerButtons button.selected{outline:2px solid #0f0;}
   #overlay{position:fixed;inset:0;display:none;justify-content:center;align-items:center;background:rgba(0,0,0,.65);flex-direction:column;gap:12px;z-index:20;text-align:center;}
   #overlay h1{margin:0;font-size:32px;}
   #overlay p{margin:0 0 12px 0;font-size:16px;}
   #overlay button{padding:6px 16px;font-size:16px;}
-  #towerPanel{position:fixed;bottom:8px;left:8px;z-index:15;background:#0008;padding:8px;border:1px solid #555;border-radius:4px;display:none;min-width:140px;}
+  #towerPanel{
+    position:fixed;
+    bottom:10px;
+    left:10px;
+    z-index:15;
+    background:rgba(0,0,0,0.7);
+    padding:12px;
+    border:1px solid #555;
+    border-radius:8px;
+    display:none;
+    min-width:160px;
+    box-shadow:0 0 15px rgba(0,0,0,0.5);
+  }
   #towerPanel h3{margin:0 0 4px 0;font-size:14px;}
   #towerPanel button{width:100%;margin-top:4px;padding:2px 0;font-size:12px;}
+  /* Buttons for targeting mode inside tower panel */
+  #towerPanelTargeting{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px;}
+  #towerPanelTargeting button{width:100%;padding:2px 0;font-size:12px;}
+  #towerPanelTargeting button.selected{outline:2px solid #fff;}
 </style>
 </head>
 <body>
@@ -69,6 +121,7 @@ Have fun hacking! – Dev Mento
 <div id="towerPanel">
   <h3 id="towerPanelTitle">Tower</h3>
   <div id="towerPanelStats"></div>
+  <div id="towerPanelTargeting"></div>
   <button id="upgradeBtn">Upgrade</button>
   <button id="sellBtn">Sell</button>
 </div>
@@ -199,9 +252,17 @@ function fmt(n){return Math.floor(n);}
    DRAW – PATH BACKGROUND
    ===================================================================== */
 function drawPath(){
+  ctx.lineCap='butt';
+  // dark casing
+  ctx.strokeStyle='#222';
+  ctx.lineWidth=TILE/2 + 4;
+  ctx.beginPath();
+  ctx.moveTo(PATH[0].x+TILE/2, PATH[0].y+TILE/2);
+  for(const p of PATH) ctx.lineTo(p.x+TILE/2,p.y+TILE/2);
+  ctx.stroke();
+  // inner lighter path
   ctx.strokeStyle='#555';
   ctx.lineWidth=TILE/2;
-  ctx.lineCap='butt';
   ctx.beginPath();
   ctx.moveTo(PATH[0].x+TILE/2, PATH[0].y+TILE/2);
   for(const p of PATH) ctx.lineTo(p.x+TILE/2,p.y+TILE/2);
@@ -214,6 +275,7 @@ function drawPath(){
 class Tower{
   constructor(x,y,typeKey){
     this.x=x; this.y=y; this.type=typeKey; this.level=1; this.cooldown=0; this.angle=0; // radians
+    this.targetingMode='first'; // default targeting mode
   }
   // Return effective stats for current level.
   get stats(){
@@ -233,24 +295,40 @@ class Tower{
   }
   update(dt){
     this.cooldown -= dt;
-    // pick a target: closest to this tower (could change to other modes)
-    let nearest=null, nd=Infinity;
-    for(const e of game.enemies){
-      if(e.dead) continue;
-      const d=dist(this.x,this.y,e.x,e.y);
-      if(d <= this.stats.range && d < nd){nearest=e; nd=d;}
+    const s=this.stats;
+    // gather enemies in range
+    const targets = game.enemies.filter(e=>!e.dead && dist(this.x,this.y,e.x,e.y)<=s.range);
+    if(!targets.length) return; // nothing to shoot
+    // sort by targeting mode
+    switch(this.targetingMode){
+      case 'last':
+        targets.sort((a,b)=>a.distanceTraveled-b.distanceTraveled);
+        break;
+      case 'strongest':
+        targets.sort((a,b)=>b.hp-a.hp);
+        break;
+      case 'weakest':
+        targets.sort((a,b)=>a.hp-b.hp);
+        break;
+      case 'first':
+      default:
+        targets.sort((a,b)=>b.distanceTraveled-a.distanceTraveled);
+        break;
     }
-    if(nearest){
-      // rotate barrel toward current target
-      this.angle = Math.atan2(nearest.y-this.y, nearest.x-this.x);
-      if(this.cooldown <= 0){
-        spawnBullet(this, nearest);
-        this.cooldown = this.stats.fireRate;
-      }
+    const target=targets[0];
+    this.angle=Math.atan2(target.y-this.y, target.x-this.x);
+    if(this.cooldown<=0){
+      spawnBullet(this,target);
+      this.cooldown=s.fireRate;
     }
   }
   draw(isSelected=false){
     const s=this.stats;
+    // base shadow
+    ctx.fillStyle='#000';
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,TILE/2+3,0,Math.PI*2);
+    ctx.fill();
     // body
     ctx.fillStyle=s.color;
     ctx.beginPath();
@@ -286,6 +364,7 @@ class Enemy{
     this.speed = def.speed; // we scale speed separately in wave builder if needed
     this.reward= def.reward;
     this.color = def.color;
+    this.distanceTraveled = 0; // track how far along the path this enemy has moved
     // start at first path tile center
     this.x=PATH[0].x+TILE/2; this.y=PATH[0].y+TILE/2;
     this.pathIndex=0;
@@ -303,6 +382,7 @@ class Enemy{
     const d=dist(this.x,this.y,tx,ty);
     const travel=this.speed*dt/1000;
     if(travel>=d){
+      this.distanceTraveled += d; // count full segment travel
       this.x=tx; this.y=ty; this.pathIndex++;
       if(!PATH[this.pathIndex+1]){ // reached end
         this.dead=true; // removed next cleanup
@@ -311,6 +391,7 @@ class Enemy{
     }else{
       this.x += ((tx-this.x)/d)*travel;
       this.y += ((ty-this.y)/d)*travel;
+      this.distanceTraveled += travel;
     }
   }
   draw(){
@@ -320,6 +401,9 @@ class Enemy{
     ctx.beginPath();
     ctx.arc(this.x,this.y,r,0,Math.PI*2);
     ctx.fill();
+    ctx.strokeStyle='#000';
+    ctx.lineWidth=2;
+    ctx.stroke();
     // HP bar
     ctx.fillStyle='#0f0';
     const w=(this.hp/this.maxHp)*(TILE*2/3);
@@ -331,8 +415,9 @@ class Enemy{
    CLASS: Bullet
    ===================================================================== */
 class Bullet{
-  constructor(x,y,dx,dy,speed,dmg,splash,color){
-    this.x=x; this.y=y; this.dx=dx; this.dy=dy; this.speed=speed;
+  constructor(x,y,target,speed,dmg,splash,color){
+    // Track target directly to ensure we never miss
+    this.x=x; this.y=y; this.target=target; this.speed=speed;
     this.dmg=dmg; this.splash=splash||0; this.color=color||'#ff0';
     this.dead=false;
     // lifetime safety (in ms)
@@ -341,18 +426,17 @@ class Bullet{
   update(dt){
     if(this.dead) return;
     this.life-=dt; if(this.life<=0){this.dead=true;return;}
+    if(!this.target || this.target.dead){ this.dead=true; return; }
+    // move toward target each frame
+    const d=dist(this.x,this.y,this.target.x,this.target.y)||1;
     const travel=this.speed*dt/1000;
-    this.x+=this.dx*travel; this.y+=this.dy*travel;
-    // hit detection – test all enemies; stop on first within 6px
-    for(const e of game.enemies){
-      if(e.dead) continue;
-      const d=dist(this.x,this.y,e.x,e.y);
-      if(d<6){
-        // impact!
-        applyDamage(e,this.dmg,this.splash,this.x,this.y);
-        this.dead=true;
-        break;
-      }
+    const dx=(this.target.x-this.x)/d;
+    const dy=(this.target.y-this.y)/d;
+    this.x+=dx*travel; this.y+=dy*travel;
+    // check for impact – only against target
+    if(dist(this.x,this.y,this.target.x,this.target.y)<6){
+      applyDamage(this.target,this.dmg,this.splash,this.x,this.y);
+      this.dead=true;
     }
   }
   draw(){
@@ -380,11 +464,8 @@ function applyDamage(target,dmg,splash,ix,iy){
    ===================================================================== */
 function spawnBullet(tower,target){
   const s=tower.stats;
-  // direction unit vector
-  const d=dist(tower.x,tower.y,target.x,target.y)||1;
-  const dx=(target.x-tower.x)/d;
-  const dy=(target.y-tower.y)/d;
-  const b=new Bullet(tower.x,tower.y,dx,dy,s.bulletSpeed,s.dmg,s.splash,s.color);
+  // Bullet homes toward target so no need to precompute direction
+  const b=new Bullet(tower.x,tower.y,target,s.bulletSpeed,s.dmg,s.splash,s.color);
   game.bullets.push(b);
 }
 
@@ -398,8 +479,10 @@ function spawnBullet(tower,target){
 function buildWave(n){
   const jobs=[];
   let t=0; // ms offset
-  const baseCount = 5 + n*2; // grows with wave
-  const hpScale   = 1 + n*0.15; // +15% hp per wave
+  // Fewer enemies at the start and a new HP curve
+  const baseCount = 4 + n; // grows slowly each wave
+  // Start at 4% base HP on wave 1 and increase half-exponentially each level
+  const hpScale   = 0.04 * Math.pow(1.5, n-1);
   for(let i=0;i<baseCount;i++){
     jobs.push({time:t,type:'grunt',hpScale});
     t+=600; // 0.6s stagger
@@ -511,6 +594,7 @@ function refreshTowerButtonStates(){
 const towerPanelEl = document.getElementById('towerPanel');
 const towerPanelTitle=document.getElementById('towerPanelTitle');
 const towerPanelStats=document.getElementById('towerPanelStats');
+const towerPanelTargetingEl=document.getElementById('towerPanelTargeting');
 const upgradeBtn=document.getElementById('upgradeBtn');
 const sellBtn=document.getElementById('sellBtn');
 
@@ -581,6 +665,15 @@ function showTowerPanel(t){
   towerPanelTitle.textContent=`${def.label} L${t.level}`;
   const s=t.stats;
   towerPanelStats.innerHTML=`Range: ${fmt(s.range)}<br>Dmg: ${s.dmg}${s.splash?` (splash ${fmt(s.splash)})`:''}<br>Fire: ${fmt(s.fireRate)}ms`;
+  // build targeting buttons
+  towerPanelTargetingEl.innerHTML='';
+  ['first','last','strongest','weakest'].forEach(mode=>{
+    const btn=document.createElement('button');
+    btn.textContent=mode.charAt(0).toUpperCase()+mode.slice(1);
+    if(mode===t.targetingMode) btn.classList.add('selected');
+    btn.addEventListener('click',()=>{t.targetingMode=mode;showTowerPanel(t);});
+    towerPanelTargetingEl.appendChild(btn);
+  });
   upgradeBtn.textContent=`Upgrade (${upgradeCost})`;
   upgradeBtn.disabled = game.cash < upgradeCost;
   sellBtn.textContent=`Sell (+${sellValue})`;
