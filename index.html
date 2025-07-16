@@ -415,8 +415,9 @@ function spawnBullet(tower,target){
 function buildWave(n){
   const jobs=[];
   let t=0; // ms offset
-  const baseCount = 5 + n*2; // grows with wave
-  const hpScale   = 1 + n*0.15; // +15% hp per wave
+  // Fewer enemies at the start and gentler health scaling for survival mode
+  const baseCount = 4 + n;             // grows slowly each wave
+  const hpScale   = Math.pow(1.09, n); // exponential scaling
   for(let i=0;i<baseCount;i++){
     jobs.push({time:t,type:'grunt',hpScale});
     t+=600; // 0.6s stagger
