@@ -351,8 +351,9 @@ class Enemy{
    CLASS: Bullet
    ===================================================================== */
 class Bullet{
-  constructor(x,y,dx,dy,speed,dmg,splash,color){
-    this.x=x; this.y=y; this.dx=dx; this.dy=dy; this.speed=speed;
+  constructor(x,y,target,speed,dmg,splash,color){
+    // Track target directly to ensure we never miss
+    this.x=x; this.y=y; this.target=target; this.speed=speed;
     this.dmg=dmg; this.splash=splash||0; this.color=color||'#ff0';
     this.dead=false;
     // lifetime safety (in ms)
@@ -361,18 +362,17 @@ class Bullet{
   update(dt){
     if(this.dead) return;
     this.life-=dt; if(this.life<=0){this.dead=true;return;}
+    if(!this.target || this.target.dead){ this.dead=true; return; }
+    // move toward target each frame
+    const d=dist(this.x,this.y,this.target.x,this.target.y)||1;
     const travel=this.speed*dt/1000;
-    this.x+=this.dx*travel; this.y+=this.dy*travel;
-    // hit detection – test all enemies; stop on first within 6px
-    for(const e of game.enemies){
-      if(e.dead) continue;
-      const d=dist(this.x,this.y,e.x,e.y);
-      if(d<6){
-        // impact!
-        applyDamage(e,this.dmg,this.splash,this.x,this.y);
-        this.dead=true;
-        break;
-      }
+    const dx=(this.target.x-this.x)/d;
+    const dy=(this.target.y-this.y)/d;
+    this.x+=dx*travel; this.y+=dy*travel;
+    // check for impact – only against target
+    if(dist(this.x,this.y,this.target.x,this.target.y)<6){
+      applyDamage(this.target,this.dmg,this.splash,this.x,this.y);
+      this.dead=true;
     }
   }
   draw(){
@@ -400,11 +400,8 @@ function applyDamage(target,dmg,splash,ix,iy){
    ===================================================================== */
 function spawnBullet(tower,target){
   const s=tower.stats;
-  // direction unit vector
-  const d=dist(tower.x,tower.y,target.x,target.y)||1;
-  const dx=(target.x-tower.x)/d;
-  const dy=(target.y-tower.y)/d;
-  const b=new Bullet(tower.x,tower.y,dx,dy,s.bulletSpeed,s.dmg,s.splash,s.color);
+  // Bullet homes toward target so no need to precompute direction
+  const b=new Bullet(tower.x,tower.y,target,s.bulletSpeed,s.dmg,s.splash,s.color);
   game.bullets.push(b);
 }
 
