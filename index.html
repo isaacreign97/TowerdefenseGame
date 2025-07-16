@@ -49,6 +49,10 @@ Have fun hacking! – Dev Mento
   #towerPanel{position:fixed;bottom:8px;left:8px;z-index:15;background:#0008;padding:8px;border:1px solid #555;border-radius:4px;display:none;min-width:140px;}
   #towerPanel h3{margin:0 0 4px 0;font-size:14px;}
   #towerPanel button{width:100%;margin-top:4px;padding:2px 0;font-size:12px;}
+  /* Buttons for targeting mode inside tower panel */
+  #towerPanelTargeting{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px;}
+  #towerPanelTargeting button{width:100%;padding:2px 0;font-size:12px;}
+  #towerPanelTargeting button.selected{outline:2px solid #fff;}
 </style>
 </head>
 <body>
@@ -69,6 +73,7 @@ Have fun hacking! – Dev Mento
 <div id="towerPanel">
   <h3 id="towerPanelTitle">Tower</h3>
   <div id="towerPanelStats"></div>
+  <div id="towerPanelTargeting"></div>
   <button id="upgradeBtn">Upgrade</button>
   <button id="sellBtn">Sell</button>
 </div>
@@ -214,6 +219,7 @@ function drawPath(){
 class Tower{
   constructor(x,y,typeKey){
     this.x=x; this.y=y; this.type=typeKey; this.level=1; this.cooldown=0; this.angle=0; // radians
+    this.targetingMode='first'; // default targeting mode
   }
   // Return effective stats for current level.
   get stats(){
@@ -233,20 +239,31 @@ class Tower{
   }
   update(dt){
     this.cooldown -= dt;
-    // pick a target: closest to this tower (could change to other modes)
-    let nearest=null, nd=Infinity;
-    for(const e of game.enemies){
-      if(e.dead) continue;
-      const d=dist(this.x,this.y,e.x,e.y);
-      if(d <= this.stats.range && d < nd){nearest=e; nd=d;}
+    const s=this.stats;
+    // gather enemies in range
+    const targets = game.enemies.filter(e=>!e.dead && dist(this.x,this.y,e.x,e.y)<=s.range);
+    if(!targets.length) return; // nothing to shoot
+    // sort by targeting mode
+    switch(this.targetingMode){
+      case 'last':
+        targets.sort((a,b)=>a.distanceTraveled-b.distanceTraveled);
+        break;
+      case 'strongest':
+        targets.sort((a,b)=>b.hp-a.hp);
+        break;
+      case 'weakest':
+        targets.sort((a,b)=>a.hp-b.hp);
+        break;
+      case 'first':
+      default:
+        targets.sort((a,b)=>b.distanceTraveled-a.distanceTraveled);
+        break;
     }
-    if(nearest){
-      // rotate barrel toward current target
-      this.angle = Math.atan2(nearest.y-this.y, nearest.x-this.x);
-      if(this.cooldown <= 0){
-        spawnBullet(this, nearest);
-        this.cooldown = this.stats.fireRate;
-      }
+    const target=targets[0];
+    this.angle=Math.atan2(target.y-this.y, target.x-this.x);
+    if(this.cooldown<=0){
+      spawnBullet(this,target);
+      this.cooldown=s.fireRate;
     }
   }
   draw(isSelected=false){
@@ -286,6 +303,7 @@ class Enemy{
     this.speed = def.speed; // we scale speed separately in wave builder if needed
     this.reward= def.reward;
     this.color = def.color;
+    this.distanceTraveled = 0; // track how far along the path this enemy has moved
     // start at first path tile center
     this.x=PATH[0].x+TILE/2; this.y=PATH[0].y+TILE/2;
     this.pathIndex=0;
@@ -303,6 +321,7 @@ class Enemy{
     const d=dist(this.x,this.y,tx,ty);
     const travel=this.speed*dt/1000;
     if(travel>=d){
+      this.distanceTraveled += d; // count full segment travel
       this.x=tx; this.y=ty; this.pathIndex++;
       if(!PATH[this.pathIndex+1]){ // reached end
         this.dead=true; // removed next cleanup
@@ -311,6 +330,7 @@ class Enemy{
     }else{
       this.x += ((tx-this.x)/d)*travel;
       this.y += ((ty-this.y)/d)*travel;
+      this.distanceTraveled += travel;
     }
   }
   draw(){
@@ -511,6 +531,7 @@ function refreshTowerButtonStates(){
 const towerPanelEl = document.getElementById('towerPanel');
 const towerPanelTitle=document.getElementById('towerPanelTitle');
 const towerPanelStats=document.getElementById('towerPanelStats');
+const towerPanelTargetingEl=document.getElementById('towerPanelTargeting');
 const upgradeBtn=document.getElementById('upgradeBtn');
 const sellBtn=document.getElementById('sellBtn');
 
@@ -581,6 +602,15 @@ function showTowerPanel(t){
   towerPanelTitle.textContent=`${def.label} L${t.level}`;
   const s=t.stats;
   towerPanelStats.innerHTML=`Range: ${fmt(s.range)}<br>Dmg: ${s.dmg}${s.splash?` (splash ${fmt(s.splash)})`:''}<br>Fire: ${fmt(s.fireRate)}ms`;
+  // build targeting buttons
+  towerPanelTargetingEl.innerHTML='';
+  ['first','last','strongest','weakest'].forEach(mode=>{
+    const btn=document.createElement('button');
+    btn.textContent=mode.charAt(0).toUpperCase()+mode.slice(1);
+    if(mode===t.targetingMode) btn.classList.add('selected');
+    btn.addEventListener('click',()=>{t.targetingMode=mode;showTowerPanel(t);});
+    towerPanelTargetingEl.appendChild(btn);
+  });
   upgradeBtn.textContent=`Upgrade (${upgradeCost})`;
   upgradeBtn.disabled = game.cash < upgradeCost;
   sellBtn.textContent=`Sell (+${sellValue})`;
