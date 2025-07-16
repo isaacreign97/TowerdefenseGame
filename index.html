@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <title>Tower Defense v2 – Single File Build</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
 <!--
 ============================================================
 Tower Defense v2 – Upgraded Single-File Teaching Build
@@ -32,21 +35,66 @@ Have fun hacking! – Dev Mento
 -->
 <style>
   /* ==== PAGE & BASE ==== */
-  html,body{margin:0;height:100%;background:#111;color:#eee;font-family:sans-serif;display:flex;justify-content:center;align-items:center;}
+  html,body{margin:0;height:100%;background:#111;color:#eee;font-family:'Roboto Mono', monospace;display:flex;justify-content:center;align-items:center;}
   #game{background:#222;border:2px solid #555;border-radius:8px;cursor:crosshair;touch-action:none;image-rendering:pixelated;}
-  #hud{position:fixed;top:8px;left:8px;font-size:14px;display:flex;gap:8px;align-items:center;z-index:10;}
+  #hud{
+    position:fixed;
+    top:10px;
+    left:10px;
+    background:rgba(0,0,0,0.5);
+    padding:8px 12px;
+    border-radius:8px;
+    border:1px solid #444;
+    display:flex;
+    gap:16px;
+    align-items:center;
+    z-index:10;
+    font-size:16px;
+  }
   #hud span{min-width:60px;display:inline-block;}
   #towerButtons{display:inline-flex;gap:4px;}
-  #towerButtons button{padding:2px 6px;font-size:12px;line-height:1;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;}
-  #towerButtons button.selected{outline:2px solid #fff;}
-  #towerButtons button.disabled{opacity:.4;cursor:not-allowed;}
-  #spawnBtn,#pauseBtn,#restartBtn{padding:2px 8px;font-size:12px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;}
-  #spawnBtn:disabled{opacity:.4;cursor:not-allowed;}
+  button{
+    padding:4px 10px;
+    font-size:14px;
+    border-radius:5px;
+    border:1px solid #666;
+    background:linear-gradient(to bottom,#444,#222);
+    color:#eee;
+    cursor:pointer;
+    transition:all 0.2s ease;
+    box-shadow:0 2px 5px rgba(0,0,0,0.2);
+  }
+  button:hover:not(:disabled){
+    background:linear-gradient(to bottom,#555,#333);
+    border-color:#888;
+    transform:translateY(-1px);
+    box-shadow:0 3px 7px rgba(0,0,0,0.3);
+  }
+  button:disabled,
+  button.disabled{
+    opacity:0.4;
+    cursor:not-allowed;
+    transform:none;
+    box-shadow:none;
+  }
+  #towerButtons button.selected{outline:2px solid #0f0;}
   #overlay{position:fixed;inset:0;display:none;justify-content:center;align-items:center;background:rgba(0,0,0,.65);flex-direction:column;gap:12px;z-index:20;text-align:center;}
   #overlay h1{margin:0;font-size:32px;}
   #overlay p{margin:0 0 12px 0;font-size:16px;}
   #overlay button{padding:6px 16px;font-size:16px;}
-  #towerPanel{position:fixed;bottom:8px;left:8px;z-index:15;background:#0008;padding:8px;border:1px solid #555;border-radius:4px;display:none;min-width:140px;}
+  #towerPanel{
+    position:fixed;
+    bottom:10px;
+    left:10px;
+    z-index:15;
+    background:rgba(0,0,0,0.7);
+    padding:12px;
+    border:1px solid #555;
+    border-radius:8px;
+    display:none;
+    min-width:160px;
+    box-shadow:0 0 15px rgba(0,0,0,0.5);
+  }
   #towerPanel h3{margin:0 0 4px 0;font-size:14px;}
   #towerPanel button{width:100%;margin-top:4px;padding:2px 0;font-size:12px;}
   /* Buttons for targeting mode inside tower panel */
@@ -204,9 +252,17 @@ function fmt(n){return Math.floor(n);}
    DRAW – PATH BACKGROUND
    ===================================================================== */
 function drawPath(){
+  ctx.lineCap='butt';
+  // dark casing
+  ctx.strokeStyle='#222';
+  ctx.lineWidth=TILE/2 + 4;
+  ctx.beginPath();
+  ctx.moveTo(PATH[0].x+TILE/2, PATH[0].y+TILE/2);
+  for(const p of PATH) ctx.lineTo(p.x+TILE/2,p.y+TILE/2);
+  ctx.stroke();
+  // inner lighter path
   ctx.strokeStyle='#555';
   ctx.lineWidth=TILE/2;
-  ctx.lineCap='butt';
   ctx.beginPath();
   ctx.moveTo(PATH[0].x+TILE/2, PATH[0].y+TILE/2);
   for(const p of PATH) ctx.lineTo(p.x+TILE/2,p.y+TILE/2);
@@ -268,6 +324,11 @@ class Tower{
   }
   draw(isSelected=false){
     const s=this.stats;
+    // base shadow
+    ctx.fillStyle='#000';
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,TILE/2+3,0,Math.PI*2);
+    ctx.fill();
     // body
     ctx.fillStyle=s.color;
     ctx.beginPath();
@@ -340,6 +401,9 @@ class Enemy{
     ctx.beginPath();
     ctx.arc(this.x,this.y,r,0,Math.PI*2);
     ctx.fill();
+    ctx.strokeStyle='#000';
+    ctx.lineWidth=2;
+    ctx.stroke();
     // HP bar
     ctx.fillStyle='#0f0';
     const w=(this.hp/this.maxHp)*(TILE*2/3);
